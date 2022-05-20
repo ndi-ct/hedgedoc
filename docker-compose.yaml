@@ -1,0 +1,73 @@
+version: '3'
+
+networks:
+  default:
+    driver: bridge
+
+services:
+  traefik:
+    image: traefik:2.4
+    container_name: traefik
+    volumes:
+      - ./traefik:/etc/traefik
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+    ports:
+      - 80:80
+      - 443:443
+    command:
+      - '--providers.docker=true'
+      - '--providers.docker.exposedByDefault=false'
+      - '--entrypoints.http=true'
+      - '--entrypoints.http.address=:80'
+      - '--entrypoints.http.http.redirections.entrypoint.to=https'
+      - '--entrypoints.http.http.redirections.entrypoint.scheme=https'
+      - '--entrypoints.https=true'
+      - '--entrypoints.https.address=:443'
+      - '--certificatesResolvers.letsencrypt.acme.email=mail@example.com' #edit email address
+      - '--certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json'
+      - '--certificatesResolvers.letsencrypt.acme.httpChallenge.entryPoint=http'
+      - '--log=true'
+      - '--log.level=ERROR'
+
+  database:
+    image: postgres:13.4-alpine
+    environment:
+      - POSTGRES_USER=hedgedoc
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=hedgedoc
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - default
+    restart: always
+  app:
+    # Make sure to use the latest release from https://hedgedoc.org/latest-release
+    image: quay.io/hedgedoc/hedgedoc:1.9.3
+    environment:
+      - CMD_DB_URL=postgres://hedgedoc:password@database:5432/hedgedoc
+      - CMD_DOMAIN=localhost
+      - CMD_URL_ADDPORT=false
+      - CMD_PROTOCOL_USESSL=false
+      - TZ=Europe/Berlin
+      - CMD_ALLOW_FREEURL=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`sub.example.com`)" #edit domain for host
+      - "traefik.http.routers.app.entrypoints=https"
+      - "traefik.http.routers.app.tls=true"
+      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app.loadBalancer.server.port=3000"      
+    volumes:
+      - uploads:/hedgedoc/public/uploads
+    networks:
+      - default
+    ports:
+      - "3000:3000"
+    restart: always
+    depends_on:
+      - database
+volumes:
+  database:
+  uploads:
